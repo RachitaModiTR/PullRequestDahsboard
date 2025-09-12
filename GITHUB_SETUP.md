@@ -24,6 +24,8 @@ git branch -M main
 git push -u origin main
 ```
 
+**Note:** Your repository has already been pushed to: `https://github.com/RachitaModiTR/PullRequestDahsboard.git`
+
 Replace `YOUR_USERNAME` and `YOUR_REPOSITORY_NAME` with your actual GitHub username and the repository name you chose.
 
 ## Step 3: Verify Upload
