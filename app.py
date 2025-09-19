@@ -233,13 +233,13 @@ class GitHubPRAnalyzer:
                     if match1:
                         workitem_number = match1.group(1)
                         workitem = workitem_number  # Just the number without Ab# prefix
-                        # Create a URL for the workitem (using a placeholder URL format)
-                        workitem_url = f"https://workitem.example.com/item/{workitem_number}"
+                        # Create a URL for the workitem using Azure DevOps format
+                        workitem_url = f"https://dev.azure.com/tr-tax/TaxProf/_workitems/edit/{workitem_number}"
                     elif match2:
                         workitem_number = match2.group(1)
                         workitem = workitem_number  # Just the number
-                        # Create a URL for the workitem (using a placeholder URL format)
-                        workitem_url = f"https://workitem.example.com/item/{workitem_number}"
+                        # Create a URL for the workitem using Azure DevOps format
+                        workitem_url = f"https://dev.azure.com/tr-tax/TaxProf/_workitems/edit/{workitem_number}"
                     
                     # Fetch detailed conversation count
                     pr_number = pr.get('number', 0)
@@ -459,62 +459,92 @@ def main():
                 #         axis=1
                 #     )
                 
-                # Create a clickable PR No column using AgGrid
+                # Create a copy of the dataframe with only the display columns
+                display_df = filtered_df[display_columns].copy()
+                
+                # Make sure PR_URL is available for the PR No column
                 if 'PR No' in display_columns and 'PR_URL' in filtered_df.columns:
-                    # Define JavaScript code for rendering clickable PR No cells
-                    cell_renderer = JsCode("""
-                    function(params) {
-                        if (params.value === null || params.value === undefined) {
-                            return '';
-                        }
-                        // Get the PR URL from the PR_URL column
-                        const prUrl = params.data.PR_URL;
-                        if (!prUrl) {
-                            return params.value;
-                        }
-                        // Create a clickable link
-                        return `<a href="${prUrl}" target="_blank" style="color: #1E88E5; text-decoration: underline; cursor: pointer;">${params.value}</a>`;
+                    # Add PR_URL to the display dataframe for the cell renderer to access
+                    display_df['PR_URL'] = filtered_df['PR_URL']
+                
+                # Add Workitem URL for the Workitem column
+                if 'Workitem' in display_columns:
+                    # Create Azure DevOps URL for workitems
+                    display_df['Workitem_URL'] = display_df['Workitem'].apply(
+                        lambda x: f"https://dev.azure.com/tr-tax/TaxProf/_workitems/edit/{x}" if pd.notna(x) else None
+                    )
+                
+                # Define JavaScript code for rendering clickable PR No cells
+                pr_cell_renderer = JsCode("""
+                function(params) {
+                    if (params.value === null || params.value === undefined) {
+                        return '';
                     }
-                    """)
-                    
-                    # Create a copy of the dataframe with only the display columns
-                    display_df = filtered_df[display_columns].copy()
-                    
-                    # Build grid options
-                    gb = GridOptionsBuilder.from_dataframe(display_df)
-                    
-                    # Configure the PR No column to use the custom cell renderer
-                    gb.configure_column('PR No', cellRenderer=cell_renderer)
-                    
-                    # Set other grid options
-                    gb.configure_grid_options(
-                        domLayout='normal',
-                        rowHeight=35,
-                        headerHeight=45,
-                        enableCellTextSelection=True,
-                        suppressRowClickSelection=True
-                    )
-                    
-                    # Build the grid options
-                    grid_options = gb.build()
-                    
-                    # Display the AgGrid with clickable PR No column
-                    st.info("💡 Click on a PR number to open it in GitHub")
-                    AgGrid(
-                        display_df,
-                        gridOptions=grid_options,
-                        allow_unsafe_jscode=True,
-                        fit_columns_on_grid_load=True,
-                        height=450,
-                        theme="streamlit"
-                    )
-                else:
-                    # Fallback to regular dataframe if PR No or PR_URL is not available
-                    st.dataframe(
-                        filtered_df[display_columns],
-                        use_container_width=True,
-                        hide_index=True
-                    )
+                    // Get the PR URL from the PR_URL column
+                    const prUrl = params.data.PR_URL;
+                    if (!prUrl) {
+                        return params.value;
+                    }
+                    // Create a clickable link
+                    return `<a href="${prUrl}" target="_blank" style="color: #1E88E5; text-decoration: underline; cursor: pointer;">${params.value}</a>`;
+                }
+                """)
+                
+                # Define JavaScript code for rendering clickable Workitem cells
+                workitem_cell_renderer = JsCode("""
+                function(params) {
+                    if (params.value === null || params.value === undefined) {
+                        return '';
+                    }
+                    // Get the Workitem URL
+                    const workitemUrl = params.data.Workitem_URL;
+                    if (!workitemUrl) {
+                        return params.value;
+                    }
+                    // Create a clickable link
+                    return `<a href="${workitemUrl}" target="_blank" style="color: #1E88E5; text-decoration: underline; cursor: pointer;">${params.value}</a>`;
+                }
+                """)
+                
+                # Build grid options
+                gb = GridOptionsBuilder.from_dataframe(display_df)
+                
+                # Configure the PR No column to use the custom cell renderer if it exists
+                if 'PR No' in display_columns and 'PR_URL' in display_df.columns:
+                    gb.configure_column('PR No', cellRenderer=pr_cell_renderer)
+                
+                # Configure the Workitem column to use the custom cell renderer if it exists
+                if 'Workitem' in display_columns and 'Workitem_URL' in display_df.columns:
+                    gb.configure_column('Workitem', cellRenderer=workitem_cell_renderer)
+                
+                # Hide the URL columns from display
+                if 'PR_URL' in display_df.columns:
+                    gb.configure_column('PR_URL', hide=True)
+                if 'Workitem_URL' in display_df.columns:
+                    gb.configure_column('Workitem_URL', hide=True)
+                
+                # Set other grid options
+                gb.configure_grid_options(
+                    domLayout='normal',
+                    rowHeight=35,
+                    headerHeight=45,
+                    enableCellTextSelection=True,
+                    suppressRowClickSelection=True
+                )
+                
+                # Build the grid options
+                grid_options = gb.build()
+                
+                # Display the AgGrid with clickable columns
+                st.info("💡 Click on PR numbers or Workitem numbers to open them in a new tab")
+                AgGrid(
+                    display_df,
+                    gridOptions=grid_options,
+                    allow_unsafe_jscode=True,
+                    fit_columns_on_grid_load=True,
+                    height=450,
+                    theme="streamlit"
+                )
                 
                 # Export to CSV
                 csv = filtered_df.to_csv(index=False).encode('utf-8')
