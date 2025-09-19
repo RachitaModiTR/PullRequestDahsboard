@@ -167,9 +167,12 @@ class GitHubPRAnalyzer:
         
         processed_data = []
         
-        # Regular expression to extract workitem numbers (Ab# followed by 7 digits)
+        # Regular expressions to extract workitem numbers
         import re
-        workitem_pattern = re.compile(r'Ab#(\d{7})')
+        # Pattern for Ab# followed by 7 digits
+        workitem_pattern1 = re.compile(r'Ab#(\d{7})')
+        # Pattern for just 7 digits (standalone)
+        workitem_pattern2 = re.compile(r'\b(\d{7})\b')
         
         try:
             for pr in prs:
@@ -203,16 +206,32 @@ class GitHubPRAnalyzer:
                     labels = ', '.join([label.get('name', '') for label in pr.get('labels', []) if label.get('name')])
                     assignees = ', '.join([assignee.get('login', '') for assignee in pr.get('assignees', []) if assignee.get('login')])
                     
-                    # Extract workitem number from PR description
+                    # Extract workitem number from PR title and description
                     workitem = None
                     workitem_url = None
-                    if pr.get('body'):
-                        match = workitem_pattern.search(pr.get('body', ''))
-                        if match:
-                            workitem_number = match.group(1)
-                            workitem = f"Ab#{workitem_number}"
-                            # Create a URL for the workitem (using a placeholder URL format)
-                            workitem_url = f"https://workitem.example.com/item/{workitem_number}"
+                    
+                    # Check PR title first
+                    title_text = pr.get('title', '')
+                    match1 = workitem_pattern1.search(title_text)
+                    match2 = workitem_pattern2.search(title_text)
+                    
+                    # If not found in title, check PR description
+                    if not match1 and not match2 and pr.get('body'):
+                        body_text = pr.get('body', '')
+                        match1 = workitem_pattern1.search(body_text)
+                        match2 = workitem_pattern2.search(body_text)
+                    
+                    # Process the match - show only the number without Ab# prefix
+                    if match1:
+                        workitem_number = match1.group(1)
+                        workitem = workitem_number  # Just the number without Ab# prefix
+                        # Create a URL for the workitem (using a placeholder URL format)
+                        workitem_url = f"https://workitem.example.com/item/{workitem_number}"
+                    elif match2:
+                        workitem_number = match2.group(1)
+                        workitem = workitem_number  # Just the number
+                        # Create a URL for the workitem (using a placeholder URL format)
+                        workitem_url = f"https://workitem.example.com/item/{workitem_number}"
                     
                     processed_data.append({
                         'PR No': pr.get('number', 0),
@@ -258,9 +277,25 @@ def main():
         help="Provide a token for higher rate limits and private repos"
     )
     
-    # Repository input
+    # Predefined repositories dropdown
+    predefined_repos = [
+        "cs-prof-cloud_ultratax-api-services",
+        "cs-prof-cloud_ultratax-client-services",
+        "cs-prof-cloud_ultratax-com-application",
+        "cs-prof-cloud_tax-assistant-services"
+    ]
+    
+    selected_repo = st.sidebar.selectbox(
+        "Select a predefined repository",
+        [""] + predefined_repos,
+        index=0,
+        help="Choose from common repositories"
+    )
+    
+    # Repository input (with predefined repo if selected)
     repo_url = st.sidebar.text_input(
         "Repository URL or Owner/Repo",
+        value=selected_repo,
         placeholder="e.g., microsoft/vscode or https://github.com/microsoft/vscode"
     )
     
@@ -380,45 +415,20 @@ def main():
                         lambda x: x.split('href="')[1].split('"')[0] if 'href="' in str(x) else x
                     )
                 
-                # Make workitem links clickable
-                if 'Workitem' in display_columns and 'Workitem URL' in filtered_df.columns:
-                    # Create a temporary column with clickable links for workitems
-                    filtered_df['Workitem_Display'] = filtered_df.apply(
-                        lambda row: f'<a href="{row["Workitem URL"]}" target="_blank">{row["Workitem"]}</a>' if pd.notna(row["Workitem"]) and pd.notna(row["Workitem URL"]) else row["Workitem"],
-                        axis=1
-                    )
+                # No need to make workitem links clickable - just display the workitem number
+                # We'll keep this commented out for reference
+                # if 'Workitem' in display_columns and 'Workitem URL' in filtered_df.columns:
+                #     filtered_df['Workitem_Display'] = filtered_df.apply(
+                #         lambda row: f'<a href="{row["Workitem URL"]}" target="_blank">{row["Workitem"]}</a>' if pd.notna(row["Workitem"]) and pd.notna(row["Workitem URL"]) else row["Workitem"],
+                #         axis=1
+                #     )
                 
-                # Prepare display columns with clickable links
-                display_columns_with_clickable_links = display_columns.copy()
-                
-                # Replace columns with their clickable versions for display
-                if 'PR No' in display_columns and 'PR No_Display' in filtered_df.columns:
-                    display_columns_with_clickable_links = [col if col != 'PR No' else 'PR No_Display' for col in display_columns_with_clickable_links]
-                
-                if 'Workitem' in display_columns and 'Workitem_Display' in filtered_df.columns:
-                    display_columns_with_clickable_links = [col if col != 'Workitem' else 'Workitem_Display' for col in display_columns_with_clickable_links]
-                
-                # Create a dataframe with clickable links
-                if 'PR No' in display_columns:
-                    # Use a different approach for clickable links
-                    # Create a new column with clickable PR numbers
-                    filtered_df['PR No_Display'] = filtered_df.apply(
-                        lambda row: f'<a href="{row["PR_URL"]}" target="_blank">{row["PR No"]}</a>',
-                        axis=1
-                    )
-                    
-                    # Replace PR No with the clickable version
-                    display_columns_with_clickable_links = [col if col != 'PR No' else 'PR No_Display' for col in display_columns]
-                    
-                    # Display the data table with clickable links
-                    st.dataframe(
-                        filtered_df[display_columns_with_clickable_links],
-                        use_container_width=True,
-                        hide_index=True
-                    )
-                else:
-                    # Display the data table without clickable links
-                    st.dataframe(filtered_df[display_columns], use_container_width=True, hide_index=True)
+                # Display the data table with the original columns
+                st.dataframe(
+                    filtered_df[display_columns],
+                    use_container_width=True,
+                    hide_index=True
+                )
                 
                 # Export to CSV
                 csv = filtered_df.to_csv(index=False).encode('utf-8')
