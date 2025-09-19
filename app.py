@@ -35,6 +35,28 @@ class GitHubPRAnalyzer:
         except:
             return {}
     
+    def _fetch_pr_comments(_self, owner: str, repo: str, pr_number: int) -> int:
+        """Fetch comments for a specific PR and return the count"""
+        comments_url = f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments"
+        review_comments_url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/comments"
+        
+        try:
+            # Fetch issue comments (general PR comments)
+            comments_response = requests.get(comments_url, headers=_self.headers, timeout=10)
+            # Fetch review comments (comments on specific lines of code)
+            review_comments_response = requests.get(review_comments_url, headers=_self.headers, timeout=10)
+            
+            comments_count = 0
+            if comments_response.status_code == 200:
+                comments_count += len(comments_response.json())
+            if review_comments_response.status_code == 200:
+                comments_count += len(review_comments_response.json())
+                
+            return comments_count
+        except Exception as e:
+            # If there's an error, just return the default comments count from PR data
+            return 0
+    
     @st.cache_data(ttl=300)  # Cache for 5 minutes
     def fetch_pull_requests(_self, owner: str, repo: str, state: str = 'all') -> List[Dict]:
         """Fetch last 100 pull requests from GitHub API with caching and error handling"""
@@ -233,8 +255,20 @@ class GitHubPRAnalyzer:
                         # Create a URL for the workitem (using a placeholder URL format)
                         workitem_url = f"https://workitem.example.com/item/{workitem_number}"
                     
+                    # Fetch detailed conversation count
+                    pr_number = pr.get('number', 0)
+                    repo_owner = pr.get('base', {}).get('repo', {}).get('owner', {}).get('login')
+                    repo_name = pr.get('base', {}).get('repo', {}).get('name')
+                    
+                    # If we can extract the repo info from the PR, use it to fetch conversations
+                    conversations_count = pr.get('comments', 0)
+                    if repo_owner and repo_name:
+                        detailed_count = _self._fetch_pr_comments(repo_owner, repo_name, pr_number)
+                        if detailed_count > 0:
+                            conversations_count = detailed_count
+                    
                     processed_data.append({
-                        'PR No': pr.get('number', 0),
+                        'PR No': pr_number,
                         'PR Title': pr.get('title', 'No Title'),
                         'Created Date': created_at.strftime('%Y-%m-%d %H:%M:%S'),
                         'Merged Date': merged_at.strftime('%Y-%m-%d %H:%M:%S') if merged_at else None,
@@ -247,6 +281,7 @@ class GitHubPRAnalyzer:
                         'Author': author,
                         'Labels': labels,
                         'Assignees': assignees,
+                        'Conversations': conversations_count,
                         'Comments': pr.get('comments', 0),
                         'Additions': pr.get('additions', 0),
                         'Deletions': pr.get('deletions', 0),
@@ -529,34 +564,188 @@ def main():
             fig.update_layout(height=400)
             st.plotly_chart(fig, use_container_width=True)
             
-            # PR Size Analysis
+            # PR Size Analysis - Ensure it works even without Additions/Deletions data
             st.subheader("PR Size Analysis")
-            if 'Additions' in filtered_df.columns and 'Deletions' in filtered_df.columns:
+            
+            # Create a simulated size category based on PR title length if actual size data is not available
+            if ('Additions' in filtered_df.columns and 'Deletions' in filtered_df.columns and 
+                filtered_df['Additions'].notna().any() and filtered_df['Deletions'].notna().any()):
+                # Use actual PR size data if available
                 filtered_df['Total Changes'] = filtered_df['Additions'] + filtered_df['Deletions']
                 filtered_df['Size Category'] = pd.cut(
                     filtered_df['Total Changes'],
                     bins=[0, 10, 50, 200, 1000, float('inf')],
                     labels=['XS (0-10)', 'S (11-50)', 'M (51-200)', 'L (201-1000)', 'XL (1000+)']
                 )
+                size_metric = "Based on actual code changes"
+            else:
+                # Fallback to title length as a proxy for PR size
+                filtered_df['Title Length'] = filtered_df['PR Title'].str.len()
+                filtered_df['Size Category'] = pd.cut(
+                    filtered_df['Title Length'],
+                    bins=[0, 30, 60, 100, 150, float('inf')],
+                    labels=['XS (0-30 chars)', 'S (31-60 chars)', 'M (61-100 chars)', 'L (101-150 chars)', 'XL (150+ chars)']
+                )
+                size_metric = "Based on PR title length (fallback method)"
+            
+            st.info(f"Size categorization: {size_metric}")
+            
+            size_stats = filtered_df.groupby('Size Category').agg({
+                'PR No': 'count',
+                'Time to Merge/Close (days)': 'mean'
+            }).reset_index()
+            size_stats.columns = ['Size Category', 'PR Count', 'Avg Time to Merge/Close (days)']
+            
+            fig = px.bar(
+                size_stats,
+                x='Size Category',
+                y='PR Count',
+                color='Avg Time to Merge/Close (days)',
+                color_continuous_scale='Viridis',
+                hover_data=['Avg Time to Merge/Close (days)']
+            )
+            fig.update_layout(height=400)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # PR Status by Author
+            st.subheader("PR Status by Author")
+            author_status = filtered_df.groupby(['Author', 'Status']).size().reset_index(name='Count')
+            top_authors = filtered_df['Author'].value_counts().nlargest(8).index.tolist()
+            author_status_filtered = author_status[author_status['Author'].isin(top_authors)]
+            
+            fig = px.bar(
+                author_status_filtered,
+                x='Author',
+                y='Count',
+                color='Status',
+                color_discrete_map={
+                    'Open': '#1E88E5',
+                    'Closed': '#E53935',
+                    'Merged': '#43A047'
+                },
+                barmode='stack'
+            )
+            fig.update_layout(height=400)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # PR Conversations Analysis
+            st.subheader("PR Conversations Analysis")
+            if 'Conversations' in filtered_df.columns:
+                # Create conversation bins
+                filtered_df['Conversation Bins'] = pd.cut(
+                    filtered_df['Conversations'],
+                    bins=[-1, 0, 1, 3, 5, 10, float('inf')],
+                    labels=['0', '1', '2-3', '4-5', '6-10', '10+']
+                )
                 
-                size_stats = filtered_df.groupby('Size Category').agg({
-                    'PR No': 'count',
-                    'Time to Merge/Close (days)': 'mean'
-                }).reset_index()
-                size_stats.columns = ['Size Category', 'PR Count', 'Avg Time to Merge/Close (days)']
+                # Count PRs by conversation bins and status
+                conv_stats = filtered_df.groupby(['Conversation Bins', 'Status']).size().reset_index(name='Count')
                 
+                # Create stacked bar chart
                 fig = px.bar(
-                    size_stats,
-                    x='Size Category',
-                    y='PR Count',
-                    color='Avg Time to Merge/Close (days)',
-                    color_continuous_scale='Viridis',
-                    hover_data=['Avg Time to Merge/Close (days)']
+                    conv_stats,
+                    x='Conversation Bins',
+                    y='Count',
+                    color='Status',
+                    color_discrete_map={
+                        'Open': '#1E88E5',
+                        'Closed': '#E53935',
+                        'Merged': '#43A047'
+                    },
+                    barmode='stack',
+                    title='PR Count by Conversation Volume'
                 )
                 fig.update_layout(height=400)
                 st.plotly_chart(fig, use_container_width=True)
+                
+                # Correlation between conversations and time to merge/close
+                if filtered_df['Time to Merge/Close (days)'].notna().any():
+                    # Calculate average time to merge/close by conversation bins
+                    conv_time = filtered_df[filtered_df['Time to Merge/Close (days)'].notna()].groupby('Conversation Bins').agg({
+                        'Time to Merge/Close (days)': 'mean',
+                        'PR No': 'count'
+                    }).reset_index()
+                    conv_time.columns = ['Conversation Bins', 'Avg Days to Merge/Close', 'PR Count']
+                    
+                    # Create a dual-axis chart
+                    fig = go.Figure()
+                    
+                    # Add bars for PR count
+                    fig.add_trace(go.Bar(
+                        x=conv_time['Conversation Bins'],
+                        y=conv_time['PR Count'],
+                        name='PR Count',
+                        marker_color='#1E88E5',
+                        opacity=0.7
+                    ))
+                    
+                    # Add line for average time
+                    fig.add_trace(go.Scatter(
+                        x=conv_time['Conversation Bins'],
+                        y=conv_time['Avg Days to Merge/Close'],
+                        name='Avg Days to Merge/Close',
+                        marker_color='#E53935',
+                        mode='lines+markers',
+                        yaxis='y2'
+                    ))
+                    
+                    # Set up the layout with two y-axes
+                    fig.update_layout(
+                        height=400,
+                        title='Impact of Conversations on Time to Merge/Close',
+                        yaxis=dict(title='PR Count'),
+                        yaxis2=dict(title='Avg Days to Merge/Close', overlaying='y', side='right'),
+                        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1)
+                    )
+                    
+                    st.plotly_chart(fig, use_container_width=True)
             else:
-                st.info("PR size data not available for analysis.")
+                st.info("Conversation data not available for analysis.")
+            
+            # Time Trends Analysis
+            st.subheader("PR Merge Time Trends")
+            if filtered_df['Time to Merge/Close (days)'].notna().any():
+                # Create a time series of average merge/close time
+                filtered_df['Created Month'] = pd.to_datetime(filtered_df['Created Date']).dt.strftime('%Y-%m')
+                time_trends = filtered_df[filtered_df['Time to Merge/Close (days)'].notna()].groupby('Created Month').agg({
+                    'Time to Merge/Close (days)': 'mean',
+                    'PR No': 'count'
+                }).reset_index()
+                time_trends.columns = ['Month', 'Avg Days to Merge/Close', 'PR Count']
+                
+                # Create a dual-axis chart
+                fig = go.Figure()
+                
+                # Add bars for PR count
+                fig.add_trace(go.Bar(
+                    x=time_trends['Month'],
+                    y=time_trends['PR Count'],
+                    name='PR Count',
+                    marker_color='#1E88E5',
+                    opacity=0.7
+                ))
+                
+                # Add line for average time
+                fig.add_trace(go.Scatter(
+                    x=time_trends['Month'],
+                    y=time_trends['Avg Days to Merge/Close'],
+                    name='Avg Days to Merge/Close',
+                    marker_color='#E53935',
+                    mode='lines+markers',
+                    yaxis='y2'
+                ))
+                
+                # Set up the layout with two y-axes
+                fig.update_layout(
+                    height=400,
+                    yaxis=dict(title='PR Count'),
+                    yaxis2=dict(title='Avg Days to Merge/Close', overlaying='y', side='right'),
+                    legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1)
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("Time trend data not available for analysis.")
 
 if __name__ == "__main__":
     main()
