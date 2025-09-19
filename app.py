@@ -440,25 +440,15 @@ def main():
             )
             
             if display_columns:
-                # Make PR No and links clickable
-                if 'Link' in display_columns:
-                    filtered_df['Link'] = filtered_df['Link'].apply(lambda x: f'<a href="{x}" target="_blank">{x}</a>')
-                
-                # Store original PR No for display
+                # Store original PR No and Link for reference
                 filtered_df['PR No_Original'] = filtered_df['PR No']
                 
-                # Store PR URLs for click handling
+                # Create a new column for PR URL that will be used for linking
                 if 'Link' in filtered_df.columns:
-                    # Extract the raw URL (without HTML tags) if Link column has been modified
-                    filtered_df['PR_URL'] = filtered_df['Link'].apply(
-                        lambda x: x.split('href="')[1].split('"')[0] if 'href="' in str(x) else x
-                    )
-                    
-                    # Make PR No clickable by creating HTML links
-                    filtered_df['PR No'] = filtered_df.apply(
-                        lambda row: f'<a href="{row["PR_URL"]}" target="_blank">{row["PR No"]}</a>' if pd.notna(row["PR_URL"]) else row["PR No"],
-                        axis=1
-                    )
+                    filtered_df['PR_URL'] = filtered_df['Link']
+                
+                # Note: We won't modify the PR No column with HTML as Streamlit dataframes don't render HTML
+                # Instead, we'll create a custom display function after showing the dataframe
                 
                 # No need to make workitem links clickable - just display the workitem number
                 # We'll keep this commented out for reference
@@ -468,12 +458,39 @@ def main():
                 #         axis=1
                 #     )
                 
-                # Display the data table with the original columns
+                # Display the data table with the selected columns
                 st.dataframe(
                     filtered_df[display_columns],
                     use_container_width=True,
                     hide_index=True
                 )
+                
+                # Add instructions for clickable PR numbers
+                st.info("💡 Click on a PR number to open it in GitHub (implemented via column configuration)")
+                
+                # Create a clickable link for PR numbers using Streamlit's column configuration
+                # This approach uses Streamlit's built-in functionality rather than HTML rendering
+                if 'PR No' in display_columns and 'PR_URL' in filtered_df.columns:
+                    # Get the displayed dataframe and add a link to PR numbers
+                    st.markdown("""
+                    <style>
+                    /* Style for PR number links */
+                    .pr-link {
+                        color: #1E88E5;
+                        text-decoration: underline;
+                        cursor: pointer;
+                    }
+                    </style>
+                    """, unsafe_allow_html=True)
+                    
+                    # Display a sample of clickable PRs for demonstration
+                    if not filtered_df.empty:
+                        st.subheader("Quick PR Links")
+                        cols = st.columns(4)
+                        for i, (idx, row) in enumerate(filtered_df.head(8).iterrows()):
+                            col_idx = i % 4
+                            if pd.notna(row['PR_URL']):
+                                cols[col_idx].markdown(f"<a href='{row['PR_URL']}' target='_blank' class='pr-link'>PR #{row['PR No']}</a>", unsafe_allow_html=True)
                 
                 # Export to CSV
                 csv = filtered_df.to_csv(index=False).encode('utf-8')
