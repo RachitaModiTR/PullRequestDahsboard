@@ -348,4 +348,141 @@ def main():
                 default=['PR No', 'PR Title', 'Author', 'Created Date', 'Merged Date', 'Closed Date', 'Status', 'Link', 'Time to Merge/Close (days)']
             )
             
-            if display_
+            if display_columns:
+                # Make links clickable
+                if 'Link' in display_columns:
+                    filtered_df['Link'] = filtered_df['Link'].apply(lambda x: f'<a href="{x}" target="_blank">{x}</a>')
+                    
+                # Display the data table
+                st.dataframe(filtered_df[display_columns], use_container_width=True, hide_index=True)
+                
+                # Export to CSV
+                csv = filtered_df.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    "Download as CSV",
+                    csv,
+                    "github_prs.csv",
+                    "text/csv",
+                    key='download-csv'
+                )
+        
+        with tab2:
+            st.subheader("📈 Visualizations")
+            
+            # Status distribution
+            st.subheader("PR Status Distribution")
+            status_counts = filtered_df['Status'].value_counts().reset_index()
+            status_counts.columns = ['Status', 'Count']
+            
+            fig = px.pie(
+                status_counts, 
+                values='Count', 
+                names='Status',
+                color='Status',
+                color_discrete_map={
+                    'Open': '#1E88E5',
+                    'Closed': '#E53935',
+                    'Merged': '#43A047'
+                },
+                hole=0.4
+            )
+            fig.update_layout(height=400)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # PR Timeline
+            st.subheader("PR Timeline")
+            filtered_df['Created Date Parsed'] = pd.to_datetime(filtered_df['Created Date'])
+            filtered_df['Month'] = filtered_df['Created Date Parsed'].dt.strftime('%Y-%m')
+            
+            monthly_counts = filtered_df.groupby(['Month', 'Status']).size().reset_index(name='Count')
+            
+            fig = px.bar(
+                monthly_counts,
+                x='Month',
+                y='Count',
+                color='Status',
+                color_discrete_map={
+                    'Open': '#1E88E5',
+                    'Closed': '#E53935',
+                    'Merged': '#43A047'
+                },
+                barmode='stack'
+            )
+            fig.update_layout(height=400)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # Time to Merge/Close Distribution
+            st.subheader("Time to Merge/Close Distribution")
+            time_data = filtered_df[filtered_df['Time to Merge/Close (days)'].notna()]
+            
+            if not time_data.empty:
+                fig = px.histogram(
+                    time_data,
+                    x='Time to Merge/Close (days)',
+                    color='Status',
+                    color_discrete_map={
+                        'Closed': '#E53935',
+                        'Merged': '#43A047'
+                    },
+                    nbins=20,
+                    opacity=0.7
+                )
+                fig.update_layout(height=400)
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("No time data available for visualization.")
+        
+        with tab3:
+            st.subheader("📊 Advanced Analytics")
+            
+            # Author Performance
+            st.subheader("Author Performance")
+            author_stats = filtered_df.groupby('Author').agg({
+                'PR No': 'count',
+                'Time to Merge/Close (days)': 'mean'
+            }).reset_index()
+            author_stats.columns = ['Author', 'PR Count', 'Avg Time to Merge/Close (days)']
+            author_stats = author_stats.sort_values('PR Count', ascending=False).head(10)
+            
+            fig = px.bar(
+                author_stats,
+                x='Author',
+                y='PR Count',
+                color='Avg Time to Merge/Close (days)',
+                color_continuous_scale='Viridis',
+                hover_data=['Avg Time to Merge/Close (days)']
+            )
+            fig.update_layout(height=400)
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # PR Size Analysis
+            st.subheader("PR Size Analysis")
+            if 'Additions' in filtered_df.columns and 'Deletions' in filtered_df.columns:
+                filtered_df['Total Changes'] = filtered_df['Additions'] + filtered_df['Deletions']
+                filtered_df['Size Category'] = pd.cut(
+                    filtered_df['Total Changes'],
+                    bins=[0, 10, 50, 200, 1000, float('inf')],
+                    labels=['XS (0-10)', 'S (11-50)', 'M (51-200)', 'L (201-1000)', 'XL (1000+)']
+                )
+                
+                size_stats = filtered_df.groupby('Size Category').agg({
+                    'PR No': 'count',
+                    'Time to Merge/Close (days)': 'mean'
+                }).reset_index()
+                size_stats.columns = ['Size Category', 'PR Count', 'Avg Time to Merge/Close (days)']
+                
+                fig = px.bar(
+                    size_stats,
+                    x='Size Category',
+                    y='PR Count',
+                    color='Avg Time to Merge/Close (days)',
+                    color_continuous_scale='Viridis',
+                    hover_data=['Avg Time to Merge/Close (days)']
+                )
+                fig.update_layout(height=400)
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                st.info("PR size data not available for analysis.")
+
+if __name__ == "__main__":
+    main()
