@@ -485,8 +485,15 @@ def main():
                     if (!prUrl) {
                         return params.value;
                     }
-                    // Create a clickable link
-                    return `<a href="${prUrl}" target="_blank" style="color: #1E88E5; text-decoration: underline; cursor: pointer;">${params.value}</a>`;
+                    // Create a clickable link - using DOM elements instead of HTML string
+                    const link = document.createElement('a');
+                    link.href = prUrl;
+                    link.target = '_blank';
+                    link.style.color = '#1E88E5';
+                    link.style.textDecoration = 'underline';
+                    link.style.cursor = 'pointer';
+                    link.innerText = params.value;
+                    return link;
                 }
                 """)
                 
@@ -501,8 +508,15 @@ def main():
                     if (!workitemUrl) {
                         return params.value;
                     }
-                    // Create a clickable link
-                    return `<a href="${workitemUrl}" target="_blank" style="color: #1E88E5; text-decoration: underline; cursor: pointer;">${params.value}</a>`;
+                    // Create a clickable link - using DOM elements instead of HTML string
+                    const link = document.createElement('a');
+                    link.href = workitemUrl;
+                    link.target = '_blank';
+                    link.style.color = '#1E88E5';
+                    link.style.textDecoration = 'underline';
+                    link.style.cursor = 'pointer';
+                    link.innerText = params.value;
+                    return link;
                 }
                 """)
                 
