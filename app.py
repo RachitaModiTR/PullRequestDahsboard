@@ -440,7 +440,7 @@ def main():
             )
             
             if display_columns:
-                # Make links clickable
+                # Make PR No and links clickable
                 if 'Link' in display_columns:
                     filtered_df['Link'] = filtered_df['Link'].apply(lambda x: f'<a href="{x}" target="_blank">{x}</a>')
                 
@@ -452,6 +452,12 @@ def main():
                     # Extract the raw URL (without HTML tags) if Link column has been modified
                     filtered_df['PR_URL'] = filtered_df['Link'].apply(
                         lambda x: x.split('href="')[1].split('"')[0] if 'href="' in str(x) else x
+                    )
+                    
+                    # Make PR No clickable by creating HTML links
+                    filtered_df['PR No'] = filtered_df.apply(
+                        lambda row: f'<a href="{row["PR_URL"]}" target="_blank">{row["PR No"]}</a>' if pd.notna(row["PR_URL"]) else row["PR No"],
+                        axis=1
                     )
                 
                 # No need to make workitem links clickable - just display the workitem number
