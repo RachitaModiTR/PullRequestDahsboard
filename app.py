@@ -422,7 +422,26 @@ def main():
                 (filtered_df['Created Date Parsed'].dt.date <= end_date)
             ]
         
-        # Create tabs for better organization
+        # Create tabs with enhanced styling for better visibility
+        st.markdown("""
+        <style>
+        .stTabs [data-baseweb="tab-list"] {
+            gap: 10px;
+        }
+        .stTabs [data-baseweb="tab"] {
+            background-color: #f0f2f6;
+            border-radius: 4px;
+            padding: 10px 16px;
+            font-weight: 600;
+        }
+        .stTabs [aria-selected="true"] {
+            background-color: #4CAF50;
+            color: white;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+        
+        # Create tabs for better organization with clear labels
         tab1, tab2, tab3 = st.tabs(["📋 Data Table", "📈 Visualizations", "📊 Advanced Analytics"])
         
         with tab1:
@@ -630,13 +649,36 @@ def main():
             
             # PR Conversations Analysis
             st.subheader("PR Conversations Analysis")
+            
+            # Ensure Conversations column exists and has valid data
             if 'Conversations' in filtered_df.columns:
+                # Convert to numeric if not already
+                filtered_df['Conversations'] = pd.to_numeric(filtered_df['Conversations'], errors='coerce').fillna(0).astype(int)
+                
+                # Debug information
+                st.info(f"Conversations range: {filtered_df['Conversations'].min()} to {filtered_df['Conversations'].max()}, Mean: {filtered_df['Conversations'].mean():.2f}")
+                
                 # Create conversation bins
                 filtered_df['Conversation Bins'] = pd.cut(
                     filtered_df['Conversations'],
                     bins=[-1, 0, 1, 3, 5, 10, float('inf')],
                     labels=['0', '1', '2-3', '4-5', '6-10', '10+']
                 )
+                
+                # Show distribution of conversation counts
+                st.subheader("Conversation Count Distribution")
+                conv_dist = filtered_df['Conversations'].value_counts().sort_index().reset_index()
+                conv_dist.columns = ['Conversation Count', 'Number of PRs']
+                
+                fig = px.bar(
+                    conv_dist,
+                    x='Conversation Count',
+                    y='Number of PRs',
+                    title='Distribution of PR Conversation Counts',
+                    color_discrete_sequence=['#1E88E5']
+                )
+                fig.update_layout(height=300)
+                st.plotly_chart(fig, use_container_width=True)
                 
                 # Count PRs by conversation bins and status
                 conv_stats = filtered_df.groupby(['Conversation Bins', 'Status']).size().reset_index(name='Count')
@@ -660,6 +702,26 @@ def main():
                 
                 # Correlation between conversations and time to merge/close
                 if filtered_df['Time to Merge/Close (days)'].notna().any():
+                    # Direct correlation between conversations and time to merge/close
+                    st.subheader("Correlation: Conversations vs. Time to Merge/Close")
+                    
+                    # Create a scatter plot
+                    fig = px.scatter(
+                        filtered_df[filtered_df['Time to Merge/Close (days)'].notna()],
+                        x='Conversations',
+                        y='Time to Merge/Close (days)',
+                        color='Status',
+                        color_discrete_map={
+                            'Closed': '#E53935',
+                            'Merged': '#43A047'
+                        },
+                        opacity=0.7,
+                        title='Direct Correlation: Conversations vs. Time to Merge/Close',
+                        trendline='ols'  # Add trend line
+                    )
+                    fig.update_layout(height=400)
+                    st.plotly_chart(fig, use_container_width=True)
+                    
                     # Calculate average time to merge/close by conversation bins
                     conv_time = filtered_df[filtered_df['Time to Merge/Close (days)'].notna()].groupby('Conversation Bins').agg({
                         'Time to Merge/Close (days)': 'mean',
