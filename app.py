@@ -167,6 +167,10 @@ class GitHubPRAnalyzer:
         
         processed_data = []
         
+        # Regular expression to extract workitem numbers (Ab# followed by 7 digits)
+        import re
+        workitem_pattern = re.compile(r'Ab#(\d{7})')
+        
         try:
             for pr in prs:
                 try:
@@ -199,6 +203,17 @@ class GitHubPRAnalyzer:
                     labels = ', '.join([label.get('name', '') for label in pr.get('labels', []) if label.get('name')])
                     assignees = ', '.join([assignee.get('login', '') for assignee in pr.get('assignees', []) if assignee.get('login')])
                     
+                    # Extract workitem number from PR description
+                    workitem = None
+                    workitem_url = None
+                    if pr.get('body'):
+                        match = workitem_pattern.search(pr.get('body', ''))
+                        if match:
+                            workitem_number = match.group(1)
+                            workitem = f"Ab#{workitem_number}"
+                            # Create a URL for the workitem (using a placeholder URL format)
+                            workitem_url = f"https://workitem.example.com/item/{workitem_number}"
+                    
                     processed_data.append({
                         'PR No': pr.get('number', 0),
                         'PR Title': pr.get('title', 'No Title'),
@@ -207,6 +222,8 @@ class GitHubPRAnalyzer:
                         'Closed Date': closed_at.strftime('%Y-%m-%d %H:%M:%S') if closed_at else None,
                         'Status': status,
                         'Link': pr.get('html_url', ''),
+                        'Workitem': workitem,
+                        'Workitem URL': workitem_url,
                         'Time to Merge/Close (days)': time_to_action,
                         'Author': author,
                         'Labels': labels,
@@ -345,16 +362,46 @@ def main():
             display_columns = st.multiselect(
                 "Select columns to display",
                 options=df.columns.tolist(),
-                default=['PR No', 'PR Title', 'Author', 'Created Date', 'Merged Date', 'Closed Date', 'Status', 'Link', 'Time to Merge/Close (days)']
+                default=['PR No', 'PR Title', 'Author', 'Created Date', 'Merged Date', 'Closed Date', 'Status', 'Link', 'Workitem', 'Time to Merge/Close (days)']
             )
             
             if display_columns:
                 # Make links clickable
                 if 'Link' in display_columns:
                     filtered_df['Link'] = filtered_df['Link'].apply(lambda x: f'<a href="{x}" target="_blank">{x}</a>')
-                    
-                # Display the data table
-                st.dataframe(filtered_df[display_columns], use_container_width=True, hide_index=True)
+                
+                # Make PR No clickable (linking to the PR URL)
+                if 'PR No' in display_columns and 'Link' in filtered_df.columns:
+                    # Extract the raw URL (without HTML tags) if Link column has been modified
+                    filtered_df['PR_URL'] = filtered_df['Link'].apply(
+                        lambda x: x.split('href="')[1].split('"')[0] if 'href="' in str(x) else x
+                    )
+                    # Create a clickable PR No
+                    filtered_df['PR No_Display'] = filtered_df.apply(
+                        lambda row: f'<a href="{row["PR_URL"]}" target="_blank">{row["PR No"]}</a>',
+                        axis=1
+                    )
+                
+                # Make workitem links clickable
+                if 'Workitem' in display_columns and 'Workitem URL' in filtered_df.columns:
+                    # Create a temporary column with clickable links for workitems
+                    filtered_df['Workitem_Display'] = filtered_df.apply(
+                        lambda row: f'<a href="{row["Workitem URL"]}" target="_blank">{row["Workitem"]}</a>' if pd.notna(row["Workitem"]) and pd.notna(row["Workitem URL"]) else row["Workitem"],
+                        axis=1
+                    )
+                
+                # Prepare display columns with clickable links
+                display_columns_with_clickable_links = display_columns.copy()
+                
+                # Replace columns with their clickable versions for display
+                if 'PR No' in display_columns and 'PR No_Display' in filtered_df.columns:
+                    display_columns_with_clickable_links = [col if col != 'PR No' else 'PR No_Display' for col in display_columns_with_clickable_links]
+                
+                if 'Workitem' in display_columns and 'Workitem_Display' in filtered_df.columns:
+                    display_columns_with_clickable_links = [col if col != 'Workitem' else 'Workitem_Display' for col in display_columns_with_clickable_links]
+                
+                # Display the data table with clickable links
+                st.dataframe(filtered_df[display_columns_with_clickable_links], use_container_width=True, hide_index=True)
                 
                 # Export to CSV
                 csv = filtered_df.to_csv(index=False).encode('utf-8')
