@@ -370,16 +370,14 @@ def main():
                 if 'Link' in display_columns:
                     filtered_df['Link'] = filtered_df['Link'].apply(lambda x: f'<a href="{x}" target="_blank">{x}</a>')
                 
-                # Make PR No clickable (linking to the PR URL)
-                if 'PR No' in display_columns and 'Link' in filtered_df.columns:
+                # Store original PR No for display
+                filtered_df['PR No_Original'] = filtered_df['PR No']
+                
+                # Store PR URLs for click handling
+                if 'Link' in filtered_df.columns:
                     # Extract the raw URL (without HTML tags) if Link column has been modified
                     filtered_df['PR_URL'] = filtered_df['Link'].apply(
                         lambda x: x.split('href="')[1].split('"')[0] if 'href="' in str(x) else x
-                    )
-                    # Create a clickable PR No
-                    filtered_df['PR No_Display'] = filtered_df.apply(
-                        lambda row: f'<a href="{row["PR_URL"]}" target="_blank">{row["PR No"]}</a>',
-                        axis=1
                     )
                 
                 # Make workitem links clickable
@@ -400,8 +398,27 @@ def main():
                 if 'Workitem' in display_columns and 'Workitem_Display' in filtered_df.columns:
                     display_columns_with_clickable_links = [col if col != 'Workitem' else 'Workitem_Display' for col in display_columns_with_clickable_links]
                 
-                # Display the data table with clickable links
-                st.dataframe(filtered_df[display_columns_with_clickable_links], use_container_width=True, hide_index=True)
+                # Create a dataframe with clickable links
+                if 'PR No' in display_columns:
+                    # Use a different approach for clickable links
+                    # Create a new column with clickable PR numbers
+                    filtered_df['PR No_Display'] = filtered_df.apply(
+                        lambda row: f'<a href="{row["PR_URL"]}" target="_blank">{row["PR No"]}</a>',
+                        axis=1
+                    )
+                    
+                    # Replace PR No with the clickable version
+                    display_columns_with_clickable_links = [col if col != 'PR No' else 'PR No_Display' for col in display_columns]
+                    
+                    # Display the data table with clickable links
+                    st.dataframe(
+                        filtered_df[display_columns_with_clickable_links],
+                        use_container_width=True,
+                        hide_index=True
+                    )
+                else:
+                    # Display the data table without clickable links
+                    st.dataframe(filtered_df[display_columns], use_container_width=True, hide_index=True)
                 
                 # Export to CSV
                 csv = filtered_df.to_csv(index=False).encode('utf-8')
