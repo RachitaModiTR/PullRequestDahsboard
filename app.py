@@ -6,6 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from typing import List, Dict, Optional
 import time
+from st_aggrid import AgGrid, GridOptionsBuilder, JsCode
 
 # Configure Streamlit page
 st.set_page_config(
@@ -458,39 +459,62 @@ def main():
                 #         axis=1
                 #     )
                 
-                # Display the data table with the selected columns
-                st.dataframe(
-                    filtered_df[display_columns],
-                    use_container_width=True,
-                    hide_index=True
-                )
-                
-                # Add instructions for clickable PR numbers
-                st.info("💡 Click on a PR number to open it in GitHub (implemented via column configuration)")
-                
-                # Create a clickable link for PR numbers using Streamlit's column configuration
-                # This approach uses Streamlit's built-in functionality rather than HTML rendering
+                # Create a clickable PR No column using AgGrid
                 if 'PR No' in display_columns and 'PR_URL' in filtered_df.columns:
-                    # Get the displayed dataframe and add a link to PR numbers
-                    st.markdown("""
-                    <style>
-                    /* Style for PR number links */
-                    .pr-link {
-                        color: #1E88E5;
-                        text-decoration: underline;
-                        cursor: pointer;
+                    # Define JavaScript code for rendering clickable PR No cells
+                    cell_renderer = JsCode("""
+                    function(params) {
+                        if (params.value === null || params.value === undefined) {
+                            return '';
+                        }
+                        // Get the PR URL from the PR_URL column
+                        const prUrl = params.data.PR_URL;
+                        if (!prUrl) {
+                            return params.value;
+                        }
+                        // Create a clickable link
+                        return `<a href="${prUrl}" target="_blank" style="color: #1E88E5; text-decoration: underline; cursor: pointer;">${params.value}</a>`;
                     }
-                    </style>
-                    """, unsafe_allow_html=True)
+                    """)
                     
-                    # Display a sample of clickable PRs for demonstration
-                    if not filtered_df.empty:
-                        st.subheader("Quick PR Links")
-                        cols = st.columns(4)
-                        for i, (idx, row) in enumerate(filtered_df.head(8).iterrows()):
-                            col_idx = i % 4
-                            if pd.notna(row['PR_URL']):
-                                cols[col_idx].markdown(f"<a href='{row['PR_URL']}' target='_blank' class='pr-link'>PR #{row['PR No']}</a>", unsafe_allow_html=True)
+                    # Create a copy of the dataframe with only the display columns
+                    display_df = filtered_df[display_columns].copy()
+                    
+                    # Build grid options
+                    gb = GridOptionsBuilder.from_dataframe(display_df)
+                    
+                    # Configure the PR No column to use the custom cell renderer
+                    gb.configure_column('PR No', cellRenderer=cell_renderer)
+                    
+                    # Set other grid options
+                    gb.configure_grid_options(
+                        domLayout='normal',
+                        rowHeight=35,
+                        headerHeight=45,
+                        enableCellTextSelection=True,
+                        suppressRowClickSelection=True
+                    )
+                    
+                    # Build the grid options
+                    grid_options = gb.build()
+                    
+                    # Display the AgGrid with clickable PR No column
+                    st.info("💡 Click on a PR number to open it in GitHub")
+                    AgGrid(
+                        display_df,
+                        gridOptions=grid_options,
+                        allow_unsafe_jscode=True,
+                        fit_columns_on_grid_load=True,
+                        height=450,
+                        theme="streamlit"
+                    )
+                else:
+                    # Fallback to regular dataframe if PR No or PR_URL is not available
+                    st.dataframe(
+                        filtered_df[display_columns],
+                        use_container_width=True,
+                        hide_index=True
+                    )
                 
                 # Export to CSV
                 csv = filtered_df.to_csv(index=False).encode('utf-8')
