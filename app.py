@@ -345,7 +345,7 @@ def main():
             display_columns = st.multiselect(
                 "Select columns to display",
                 options=df.columns.tolist(),
-                default=['PR No', 'PR Title', 'Created Date', 'Merged Date', 'Closed Date', 'Status', 'Link', 'Time to Merge/Close (days)']
+                default=['PR No', 'PR Title', 'Author', 'Created Date', 'Merged Date', 'Closed Date', 'Status', 'Link', 'Time to Merge/Close (days)']
             )
             
             if display_columns:
