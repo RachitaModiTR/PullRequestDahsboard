@@ -279,10 +279,10 @@ def main():
     
     # Predefined repositories dropdown
     predefined_repos = [
-        "cs-prof-cloud_ultratax-api-services",
-        "cs-prof-cloud_ultratax-client-services",
-        "cs-prof-cloud_ultratax-com-application",
-        "cs-prof-cloud_tax-assistant-services"
+        "tr/cs-prof-cloud_ultratax-api-services",
+        "tr/cs-prof-cloud_ultratax-client-services",
+        "tr/cs-prof-cloud_ultratax-com-application",
+        "tr/cs-prof-cloud_tax-assistant-services"
     ]
     
     selected_repo = st.sidebar.selectbox(
@@ -397,7 +397,7 @@ def main():
             display_columns = st.multiselect(
                 "Select columns to display",
                 options=df.columns.tolist(),
-                default=['PR No', 'PR Title', 'Author', 'Created Date', 'Merged Date', 'Closed Date', 'Status', 'Link', 'Workitem', 'Time to Merge/Close (days)']
+                default=['PR No', 'PR Title', 'Author', 'Created Date', 'Merged Date', 'Closed Date', 'Status', 'Workitem', 'Time to Merge/Close (days)']
             )
             
             if display_columns:
