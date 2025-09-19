@@ -37,25 +37,10 @@ class GitHubPRAnalyzer:
     
     def _fetch_pr_comments(_self, owner: str, repo: str, pr_number: int) -> int:
         """Fetch comments for a specific PR and return the count"""
-        comments_url = f"https://api.github.com/repos/{owner}/{repo}/issues/{pr_number}/comments"
-        review_comments_url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/comments"
-        
-        try:
-            # Fetch issue comments (general PR comments)
-            comments_response = requests.get(comments_url, headers=_self.headers, timeout=10)
-            # Fetch review comments (comments on specific lines of code)
-            review_comments_response = requests.get(review_comments_url, headers=_self.headers, timeout=10)
-            
-            comments_count = 0
-            if comments_response.status_code == 200:
-                comments_count += len(comments_response.json())
-            if review_comments_response.status_code == 200:
-                comments_count += len(review_comments_response.json())
-                
-            return comments_count
-        except Exception as e:
-            # If there's an error, just return the default comments count from PR data
-            return 0
+        # For performance reasons, we'll use the comments count from the PR data
+        # This avoids making additional API calls for each PR
+        # If more detailed comment analysis is needed, this can be re-enabled
+        return 0  # Return 0 to use the default comments count from PR data
     
     @st.cache_data(ttl=300)  # Cache for 5 minutes
     def fetch_pull_requests(_self, owner: str, repo: str, state: str = 'all') -> List[Dict]:
